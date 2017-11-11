@@ -3,3 +3,6 @@
 /etc/hookHandlers.inc
 /etc/hookOfenders.inc
 /etc/pharinix.config.php
+/error_fatal.log
+/var/smarty/
+/etc/.pharinix.config.php.swp

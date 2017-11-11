@@ -349,15 +349,27 @@
             $http = isset($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off' ? 'https' : 'http';
             $hostname = $_SERVER['HTTP_HOST'];
             $dir = str_replace(basename($_SERVER['SCRIPT_NAME']), '', $_SERVER['SCRIPT_NAME']);
+            if ($dir == '/') {
+                $dir = '';
+            }
 
             $core = preg_split('@/@', str_replace($_SERVER['DOCUMENT_ROOT'], '', realpath(dirname(__FILE__))), NULL, PREG_SPLIT_NO_EMPTY);
-            $core = $core[0];
-
-            $tmplt = $atRoot ? ($atCore ? "%s://%s/%s/" : "%s://%s/") : ($atCore ? "%s://%s/%s/" : "%s://%s%s");
+            $core = str_replace('\\', '/', $core[0]);
+            $core = str_replace('/etc/drivers', '', $core);
+            
+            if (driverTools::str_start('/', $core)) {
+                $core = substr($core, 1);
+            }
+            
+            $tmplt = $atRoot ? ($atCore ? "%s://%s/%s" : "%s://%s") : ($atCore ? "%s://%s/%s" : "%s://%s%s");
             $end = $atRoot ? ($atCore ? $core : $hostname) : ($atCore ? $core : $dir);
             $base_url = sprintf($tmplt, $http, $hostname, $end);
-        } else
+            if (!driverTools::str_end('/', $base_url)) {
+                $base_url .= '/';
+            }
+        } else {
             $base_url = 'http://localhost/';
+        }
 
         if ($parse) {
             $base_url = parse_url($base_url);
@@ -455,7 +467,154 @@
         fclose($f);
         return trim($output);
     }
+    
+    /**
+     * Get remote call user agent string based on configuration.
+     * It replace {version} and {url_base} with default values.
+     * @return string
+     */
+    public static function getUserAgent() {
+        $rowUA = driverConfig::getCFG()->getSection('[core]')->get('CURLOPT_USERAGENT');
+        if ($rowUA == null) {
+            $rowUA = 'Mozilla/5.0 (compatible; Pharinix/{version}; +{url_base})';
+        }
+        $ua = str_replace('{version}', CMS_VERSION, $rowUA);
+        $ua = str_replace('{url_base}', CMS_DEFAULT_URL_BASE, $ua);
+        return $ua;
+    }
+    
+    /**
+     * Do a remote call with cURL
+     * 
+     * @param string $url URL to call
+     * @param array $params Parameters list to send by POST, if no has value do a GET call.
+     * @param boolean $parseParams If TRUE try to parse $params how array.
+     * @param boolean $binary If TRUE add the --data-binary parameter to cURL.
+     * @param array $headers Extra headers to add.
+     * @param integer $timeoutsec Seconds before timeout.
+     * @return array array ( "header" => Petition headers, "body" => Response body, "error" => Error message );
+     * @link http://hayageek.com/php-curl-post-get
+     */
+    public static function apiCall($url, $params = null, $parseParams = true, $binary = false, $headers = null, $timeoutsec = 30) {
+        return self::apiCallMS($url, $params, $parseParams, $binary, $headers, $timeoutsec * 1000);
+    }
+    
+    /**
+     * Do a remote call with cURL
+     * 
+     * @param string $url URL to call
+     * @param array $params Parameters list to send by POST, if no has value do a GET call.
+     * @param boolean $parseParams If TRUE try to parse $params how array.
+     * @param boolean $binary If TRUE add the --data-binary parameter to cURL.
+     * @param array $headers Extra headers to add.
+     * @param integer $timeoutms Miliseconds before timeout.
+     * @return array array ( "header" => Petition headers, "body" => Response body, "error" => Error message );
+     * @link http://hayageek.com/php-curl-post-get
+     */
+    public static function apiCallMS($url, $params = null, $parseParams = true, $binary = false, $headers = null, $timeoutms = 30000) {
+        $postData = '';
+        if ($parseParams && $params != null) {
+            //create name value pairs seperated by &
+            foreach($params as $k => $v)
+            {
+               $postData .= $k . '='.$v.'&';
+            }
+            rtrim($postData, '&');
+        } else {
+            $postData = $params;
+        }
 
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        if ($binary) curl_setopt($ch, CURLOPT_BINARYTRANSFER, TRUE); // --data-binary
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_VERBOSE, 0);
+        curl_setopt($ch, CURLOPT_HEADER, 1);
+        curl_setopt($ch, CURLINFO_HEADER_OUT, 1);
+        if ($postData != "") {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_SAFE_UPLOAD, false); // Allow use @ to upload files
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        }
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT , 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, $timeoutms); //timeout in seconds
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); //not verify certificate
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Follow location headers
+        curl_setopt($ch, CURLOPT_USERAGENT, driverTools::getUserAgent());
+//        curl_setopt($ch, CURLOPT_REFERER, self::API_URL.'dashboard');
+        curl_setopt($ch,CURLOPT_ENCODING , "");
+        if ($headers != null) {
+            $h = array();
+            foreach($headers as $key => $value) {
+                $h[] = $key.': '.$value;
+            }
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $h);
+        }
+        $response = curl_exec($ch);
+
+        // Then, after your curl_exec call:
+        $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $header = substr($response, 0, $header_size);
+        $body = substr($response, $header_size);
+        $lastError = curl_error($ch);
+
+        $aux = explode("\n", $header);
+        $rHeaders = array();
+        foreach($aux as $head) {
+            $rHeaders[] = trim($head);
+        }
+
+        $resp = array (
+            "header" => $rHeaders,
+            "request" => curl_getinfo($ch),
+            "request_body" => $postData,
+            "body" => $body,
+            "error" => $lastError
+        );
+        curl_close($ch);
+        return $resp;
+    }
+    
+    /**
+     * Return a label about de error level.
+     * 
+     * @param integer $type Error level
+     * @return string
+     */
+    public static function getErrorLevelLabelByType($type) {
+        switch ($type) {
+                case E_ERROR:
+                    return 'Fatal run-time error';
+                case E_PARSE:
+                    return 'Compile-time parse error';
+                case E_CORE_ERROR:
+                    return 'Fatal errors during PHP\'s initial startup';
+                case E_COMPILE_ERROR:
+                    return 'Fatal compile-time error';
+                case E_RECOVERABLE_ERROR:
+                    return 'Catchable fatal error not catched';
+                case E_WARNING:
+                    return 'Warning';
+                case E_NOTICE:
+                    return 'Notice';
+                case E_CORE_WARNING:
+                    return 'Core warnings';
+                case E_COMPILE_WARNING:
+                    return 'Compile-time warning';
+                case E_USER_ERROR:
+                    return 'User-generated error';
+                case E_USER_WARNING:
+                    return 'User-generated warning';
+                case E_USER_NOTICE:
+                    return 'User-generated notice';
+                case E_DEPRECATED:
+                    return 'Deprecated';
+                case E_USER_DEPRECATED:
+                    return 'User-generated deprecated';
+                default:
+                    return 'Error level '.$type;
+        }
+    }
 }
 
 if (!function_exists('json_last_error_msg')) {
@@ -479,4 +638,60 @@ if (!function_exists('json_last_error_msg')) {
         return isset($ERRORS[$error]) ? $ERRORS[$error] : 'Unknown error';
     }
 
+}
+
+if (!function_exists('session_status')) {
+    if (!defined('PHP_SESSION_DISABLED')) define('PHP_SESSION_DISABLED', 0);
+    if (!defined('PHP_SESSION_NONE')) define('PHP_SESSION_NONE', 1);
+    if (!defined('PHP_SESSION_ACTIVE')) define('PHP_SESSION_ACTIVE', 2);
+    function session_status() {
+        return session_id() === '' ? PHP_SESSION_NONE : PHP_SESSION_ACTIVE;
+    }
+}
+
+// Internal PHP Server routering
+if (php_sapi_name() == 'cli-server') {
+    //http://stackoverflow.com/a/38926070
+    $dir = str_replace('\\', '/', __DIR__);
+    $dir = str_replace('/etc/drivers', '', $dir);
+    $filePath = realpath(ltrim($_SERVER["REQUEST_URI"], '/'));
+    if ($filePath && is_dir($filePath)){
+        // attempt to find an index file
+        foreach (array('index.php', 'index.html') as $indexFile){
+            if ($filePath = realpath($filePath . DIRECTORY_SEPARATOR . $indexFile)){
+                break;
+            }
+        }
+    }
+    if ($filePath && is_file($filePath)) {
+        // 1. check that file is not outside of this directory for security
+        // 2. check for circular reference to router.php
+        // 3. don't serve dotfiles
+        if (strpos($filePath, $dir . DIRECTORY_SEPARATOR) === 0 &&
+                    $filePath != $dir . DIRECTORY_SEPARATOR . 'router.php' &&
+                    substr(basename($filePath), 0, 1) != '.'
+            ) {
+//                if (strtolower(substr($filePath, -4)) == '.php') {
+//                    // php file; serve through interpreter
+////                    include $filePath;
+////                    return true;
+//                } else {
+//                    // asset file; serve from filesystem
+////                    return false;
+//                }
+//            } else {
+//                // disallowed file
+//                header("HTTP/1.1 404 Not Found");
+//                echo "404 Not Found";
+            }
+        } else {
+            // rewrite to our index file
+            $query = '';
+            if (isset($_SERVER['QUERY_STRING'])) {
+                $query = '?'.$_SERVER['QUERY_STRING'];
+            }
+            $_GET['rewrite'] = str_replace($query, '', $_SERVER['REQUEST_URI']);
+            $_GET['rewrite'] = substr($_GET['rewrite'], 1);
+//            include $dir . DIRECTORY_SEPARATOR . 'index.php';
+        }
 }

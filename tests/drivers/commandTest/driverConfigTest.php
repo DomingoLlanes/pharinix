@@ -27,6 +27,8 @@ class driverConfigTest extends PHPUnit_Framework_TestCase {
         while (!is_file("etc/pharinix.config.php")) {
             chdir("../");
         }
+        require_once 'etc/php-fslock/src/FSLockInterface.php';
+        require_once 'etc/php-fslock/src/FSLock.php';
         include_once 'etc/drivers/config.php';
     }
     

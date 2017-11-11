@@ -28,6 +28,7 @@ CMS_CACHE_LIFETIME_TEMPLATE = 120
 CMS_DEBUG_LOG_SQL = false
 CMS_MIN_PHP_VER = "5.3"
 CMS_DEFAULT_URL_BASE = "auto"
+CURLOPT_USERAGENT = "Mozilla/5.0 (compatible; Pharinix/{version}; +{url_base})"
 path = 'bin/;bin/node_type/;bin/router/;bin/user/;bin/html/;bin/cfg/;bin/gettext/;bin/lpmonitor/;bin/menu/'
 
 [mysql]
@@ -38,6 +39,23 @@ MYSQL_DBNAME = "miana"
 ADODB_PERF_NO_RUN_SQL = 1
 charset = 'utf8'
 table_charset = 'utf8_general_ci'
+; ADODB_DEFAULT_CACHE allow use the query cache by default
+ADODB_DEFAULT_CACHE = false
+; ADODB_MEMCACHE_USAGE allow the use of memcached if the query allow cache
+ADODB_MEMCACHE_USAGE = false
+ADODB_MEMCACHE_HOSTS = '192.168.0.78,192.168.0.79,192.168.0.80'
+ADODB_MEMCACHE_PORT = 11211
+ADODB_MEMCACHE_COMPRESS = false
+ADODB_MEMCACHE_LIFE = 2400
+
+[nodetypes]
+; You can use driverMemcached in CACHE_CLASS to memcached, or driverBasicCache for local memory cache.
+CACHE_CLASS = driverBasicCache
+USAGE = true
+MEMCACHE_HOSTS = '192.168.0.78,192.168.0.79,192.168.0.80'
+MEMCACHE_PORT = 11211
+MEMCACHE_COMPRESS = false
+MEMCACHE_LIFE = 2400
 
 [safe_mode]
 ; Ignore database connection

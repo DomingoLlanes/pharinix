@@ -27,6 +27,7 @@ if (!class_exists("commandSmartyRender")) {
             $params = array_merge(array(
                 "page" => '',
                 "tpl" => 'document.tpl',
+                "debug" => false,
             ), $params);
             
             if (!defined('SMARTY_DIR')) {
@@ -37,6 +38,10 @@ if (!class_exists("commandSmartyRender")) {
             
             $context = &driverCommand::getRegister("url_context");
             $def = driverPages::getPage($params["page"]);
+            if ($def === false && !empty($params["page"])) {
+                header("HTTP/1.0 404 Not Found");
+                $def = driverPages::getPage('404');
+            }
             $smarty = new Smarty;
 
             $smarty->force_compile = driverConfig::getCFG()
@@ -44,7 +49,7 @@ if (!class_exists("commandSmartyRender")) {
                     ->getAsBoolean('CMS_ALWAYS_COMPILE_TEMPLATE');
             $smarty->debugging = driverConfig::getCFG()
                     ->getSection('[core]')
-                    ->getAsBoolean('CMS_DEBUG_TEMPLATE');
+                    ->getAsBoolean('CMS_DEBUG_TEMPLATE') || $params['debug'];
             $smarty->caching = driverConfig::getCFG()
                     ->getSection('[core]')
                     ->getAsBoolean('CMS_CACHING_TEMPLATE');
@@ -59,11 +64,14 @@ if (!class_exists("commandSmartyRender")) {
             // Render native page using TPL files how base.
             $page_title = driverConfig::getCFG()->getSection('[core]')->get('CMS_TITLE');
             $smarty->assign("base_url", CMS_DEFAULT_URL_BASE);
-            $smarty->assign("page_title", $page_title, true);
+            $smarty->assign("page_subtitle", $page_title, true);
             $smarty->assign("page_charset", 'utf-8');
             $user_language = driverUser::getLangOfUser();
             $smarty->assign("user_language", $user_language[0], true);
             if ($def !== false) {
+                $smarty->assign("page_main_title", $def->fields['title'], true);
+                $smarty->assign("page_description", $def->fields['description'], true);
+                $smarty->assign("page_keys", $def->fields['keys'], true);
                 if (!empty($page_title) && !empty($def->fields['title'])) {
                     $page_title = ' :: '.$page_title;
                 }
@@ -103,7 +111,14 @@ if (!class_exists("commandSmartyRender")) {
                 $smarty->assign("block", $block, true);
             }
             // Add all available contextual variables.
-            $smarty->assign("url_context", $context, true);
+            $aux = array();
+            $context = &driverCommand::getRegister("url_context");
+            if (is_array($context)) {
+                foreach($context as $key => $ctx) {
+                    $aux[str_replace('$', '', $key)] = $ctx;
+                }
+            }
+            $smarty->assign("url_context", $aux, true);
             
             $cssFiles = &self::getRegister("filecss");
             $cssFilesStr = "";
@@ -131,6 +146,9 @@ if (!class_exists("commandSmartyRender")) {
             unset($auxparams['command']);
             unset($auxparams['interface']);
             $smarty->assign("render_params", $auxparams, true);
+            $smarty->assign("user_groups", driverUser::getGroupsNames());
+            $smarty->assign('user_isroot', driverUser::isSudoed());
+            $smarty->assign('user_isloged', driverUser::isLoged());
             // Hook
             $tpl = $params['tpl']; // Render the correct template.
             driverHook::CallHook('smartyRenderBeforeDisplay', array(
@@ -148,12 +166,14 @@ if (!class_exists("commandSmartyRender")) {
                 "parameters" => array(
                     "page" => __("Optional. Page to convert, see 'url_rewrite' table."),
                     "tpl" => __("Template file to render, Default file document.tpl."),
+                    "debug" => __("Debug this template, default false."),
                 ), 
                 "response" => array(),
                 "type" => array(
                     "parameters" => array(
                         "page" => "string",
                         "tpl" => "string",
+                        "debug" => "bool",
                     ), 
                     "response" => array(),
                 ),

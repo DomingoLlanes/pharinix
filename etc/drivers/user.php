@@ -530,6 +530,26 @@ use Gettext\Translator;
         return $_SESSION["user_groups"];
     }
     
+    /**
+     * 
+     * @return array List of active user groups like ID => Name
+     */
+    public static function getGroupsNames() {
+        $ids = self::getGroupsID();
+        $sIds = implode(',', $ids);
+        if(empty($sIds)) return array();
+        
+        $sql = "select `id`, `title` from `node_group` where `id` in (".$sIds.")";
+        $q = dbConn::Execute($sql);
+        
+        $resp = array();
+        while(!$q->EOF) {
+            $resp[$q->fields['id']] = $q->fields['title'];
+            $q->MoveNext();
+        }
+        return $resp;
+    }
+    
     public static function getUserName($id) {
         if ($id == 0) return "root";
         $sql = "select `name` from `node_user` where `id` = ".$id;
@@ -577,7 +597,7 @@ use Gettext\Translator;
             // Select language of the client
             $resp = self::getLangOfClient();
         }
-        if (isset($_SESSION)) {
+        if (session_status() != PHP_SESSION_ACTIVE) {
             @session_start();
             $_SESSION['lang'] = $resp;
             session_write_close();

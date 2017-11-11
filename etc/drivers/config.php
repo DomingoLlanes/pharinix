@@ -17,6 +17,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
+use FSLock\FSLock;
 
 class driverConfig {
     /**
@@ -164,7 +165,11 @@ class driverConfigIni {
             return;
         }
         $this->file = $file;
-        $this->fileContent = str_replace("\r","",file_get_contents($this->file));
+        $lock = new FSLock('driverConfig.'.md5($this->file));
+        if ($lock->acquire(true)) {
+            $this->fileContent = str_replace("\r","",file_get_contents($this->file));
+            $lock->release();
+        }
         $this->lexInd = 0;
         $this->lexMaxInd = strlen($this->fileContent);
         //
@@ -204,27 +209,40 @@ class driverConfigIni {
         }
     }
     
+    /**
+     * Try save configuration file, if other thread has lock over the file this will fail, and return false.
+     * 
+     * @param string $file Optional filename where save configuration
+     * @return boolean TRUE if we can save.
+     */
     public function save($file = '') {
-        if ($file == '') {
-            $file = $this->file;
-        }
-        $h = fopen($file, 'wb+');
-        foreach($this->sections as $name => $section) {
-            if ($name != ' ') {
-                fwrite($h, "\n".$name."\n");
+        $resp = false;
+        $lock = new FSLock('driverConfig.'.md5($this->file));
+        if ($lock->acquire(false)) {
+            if ($file == '') {
+                $file = $this->file;
             }
-            foreach($section->getLines() as $line) {
-                if ($line instanceof driverConfigIniComment) {
-                    if ($line->line != "\n") {
-                        fwrite($h, $line->line."\n");
+            $h = fopen($file, 'wb+');
+            foreach($this->sections as $name => $section) {
+                if ($name != ' ') {
+                    fwrite($h, "\n".$name."\n");
+                }
+                foreach($section->getLines() as $line) {
+                    if ($line instanceof driverConfigIniComment) {
+                        if ($line->line != "\n") {
+                            fwrite($h, $line->line."\n");
+                        }
+                    } else if ($line instanceof driverConfigIniPair) {
+                        fwrite($h, $line->key . " = " . $line->value."\n");
                     }
-                } else if ($line instanceof driverConfigIniPair) {
-                    fwrite($h, $line->key . " = " . $line->value."\n");
                 }
             }
+            fclose($h);
+            driverConfig::$cfg = null; // Force reload in the next usage.
+            $lock->release();
+            $resp = true;
         }
-        fclose($h);
-        driverConfig::$cfg = null; // Force reload in the next usage.
+        return $resp;
     }
     
     public function addSection($name) {
@@ -486,5 +504,7 @@ class driverConfigIniSection {
 
 $meta = driverConfig::getMeta();
 define("CMS_VERSION", $meta->meta->version);
-@header("author: Pedro Pelaez <aaaaa976@gmail.com>");
-@header("generator: Pharinix/".CMS_VERSION);
+if (!headers_sent()) {
+    header("X-Pharinix-Author: Pedro Pelaez <aaaaa976@gmail.com>");
+    header("X-Generator: Pharinix/".CMS_VERSION.' (https://github.com/PSF1/pharinix/)');
+}

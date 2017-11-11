@@ -22,6 +22,8 @@
 // Requires
 include_once("etc/drivers/tools.php");
 include_once('etc/drivers/txtlog.php');
+require_once 'etc/php-fslock/src/FSLockInterface.php';
+require_once 'etc/php-fslock/src/FSLock.php';
 include_once 'etc/drivers/config.php';
 driverConfig::getCFG();
 
@@ -69,7 +71,7 @@ foreach ($_GET as $key => $value) {
 }
 // "FILES" fused with "POST"
 foreach ($_FILES as $key => $value) {
-    $_POST[$key] = &$value;
+    $_POST[$key] = $value;
 }
 
 // Boot process
